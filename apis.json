@@ -1,0 +1,6 @@
+[
+  { "name": "JSONPlaceholder - Posts", "url": "https://jsonplaceholder.typicode.com/posts/1" },
+  { "name": "PokeAPI - Pokemon", "url": "https://pokeapi.co/api/v2/pokemon/1" },
+  { "name": "VVHan - IP Info (国内)", "url": "https://api.vvhan.com/api/visitor.info" },
+  { "name": "Reqres - Users", "url": "https://reqres.in/api/users/1" }
+]
