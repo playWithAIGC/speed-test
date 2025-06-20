@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>网站访问速度测试</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; text-align: center; }
+    h1 { color: #333; }
+    #results { margin-top: 20px; font-size: 18px; }
+    .result { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+    .loading { color: #888; }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+  </style>
+</head>
+<body>
+  <h1>网站访问速度测试</h1>
+  <div id="results">
+    <div id="pageLoad" class="result loading">正在测量页面加载时间...</div>
+    <div id="api1" class="result loading">正在测试 API 1...</div>
+    <div id="api2" class="result loading">正在测试 API 2...</div>
+  </div>
+
+  <script>
+    // 记录页面加载开始时间
+    const startTime = performance.now();
+
+    // 页面加载完成后计算加载时间
+    window.onload = () => {
+      const loadTime = performance.now() - startTime;
+      const pageLoadDiv = document.getElementById('pageLoad');
+      pageLoadDiv.textContent = `页面加载时间: ${loadTime.toFixed(2)} 毫秒`;
+      pageLoadDiv.className = 'result success';
+    };
+
+    // 测试 API 响应时间
+    async function testApi(url, elementId) {
+      const resultDiv = document.getElementById(elementId);
+      try {
+        const start = performance.now();
+        const response = await fetch(url);
+        const end = performance.now();
+        if (response.ok) {
+          const latency = end - start;
+          resultDiv.textContent = `API ${elementId} 响应时间: ${latency.toFixed(2)} 毫秒`;
+          resultDiv.className = 'result success';
+        } else {
+          resultDiv.textContent = `API ${elementId} 请求失败: ${response.status}`;
+          resultDiv.className = 'result error';
+        }
+      } catch (error) {
+        resultDiv.textContent = `API ${elementId} 请求出错: ${error.message}`;
+        resultDiv.className = 'result error';
+      }
+    }
+
+    // 测试两个公开 API 端点  
+    testApi('https://api.vvhan.com/api/visitor.info', 'api1');
+    testApi('https://pokeapi.co/api/v2/pokemon/1', 'api2');
+  </script>
+</body>
+</html>
