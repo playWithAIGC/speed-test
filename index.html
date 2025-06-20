@@ -42,8 +42,12 @@
       cursor: pointer;
       transition: background-color 0.3s;
     }
-    button:hover {
+    button:hover:not(:disabled) {
       background-color: #218838;
+    }
+    button:disabled {
+      background-color: #6c757d;
+      cursor: not-allowed;
     }
     #results, #history, #summary {
       margin-top: 20px;
@@ -126,9 +130,11 @@
     <h1>网站访问速度测试</h1>
     <div class="input-group">
       <label for="apiSelect">选择要测试的API：</label>
-      <select id="apiSelect"></select>
-      <button onclick="testApi()">测试单个API</button>
-      <button onclick="testAllApis()">测试所有API</button>
+      <select id="apiSelect">
+        <option value="">请选择API</option>
+      </select>
+      <button id="testSingleBtn" onclick="debouncedTestApi()">测试单个API</button>
+      <button id="testAllBtn" onclick="testAllApis()">测试所有API</button>
     </div>
     <div id="results">
       <div id="pageLoad" class="result loading">正在测量页面加载时间...</div>
@@ -155,23 +161,177 @@
   </div>
 
   <script>
-    // 加载API列表
-    fetch('./apis.json')
-      .then(response => response.json())
-      .then(data => {
-        const select = document.getElementById('apiSelect');
-        data.forEach(api => {
-          const option = document.createElement('option');
-          option.value = api.url;
-          option.textContent = api.name;
-          select.appendChild(option);
-        });
-      })
-      .catch(error => console.error('加载API列表失败:', error));
+    // 硬编码API列表
+    const apiList = [
+      { name: "JSONPlaceholder - Posts", url: "https://jsonplaceholder.typicode.com/posts/1" },
+      { name: "PokeAPI - Pokemon", url: "https://pokeapi.co/api/v2/pokemon/1" },
+      { name: "VVHan - IP Info (国内)", url: "https://api.vvhan.com/api/visitor.info" },
+      { name: "Reqres - Users", url: "https://reqres.in/api/users/1" }
+    ];
+
+    // 填充下拉框
+    const select = document.getElementById('apiSelect');
+    apiList.forEach(api => {
+      const option = document.createElement('option');
+      option.value = api.url;
+      option.textContent = api.name;
+      select.appendChild(option);
+    });
 
     // 记录页面加载开始时间
     const startTime = performance.now();
     let chart;
+    let currentController = null;
+    let currentTimeoutId = null;
+
+    // 防抖函数
+    function debounce(fn, delay) {
+      let timeout;
+      return function (...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), delay);
+      };
+    }
+
+    // 测试单个API
+    async function testApi() {
+      const apiUrl = document.getElementById('apiSelect').value;
+      const resultDiv = document.getElementById('apiResult');
+      const spinner = document.getElementById('apiSpinner');
+      const singleBtn = document.getElementById('testSingleBtn');
+      const allBtn = document.getElementById('testAllBtn');
+
+      if (!apiUrl) {
+        resultDiv.textContent = '请选择一个API';
+        resultDiv.className = 'result error';
+        return;
+      }
+
+      // 清理之前的请求
+      if (currentController) {
+        currentController.abort();
+        clearTimeout(currentTimeoutId);
+      }
+
+      // 禁用按钮
+      singleBtn.disabled = true;
+      allBtn.disabled = true;
+      resultDiv.textContent = '正在测试API...';
+      resultDiv.className = 'result loading';
+      spinner.style.display = 'block';
+
+      try {
+        currentController = new AbortController();
+        currentTimeoutId = setTimeout(() => {
+          currentController.abort();
+        }, 5000);
+        const start = performance.now();
+        const response = await fetch(apiUrl, { signal: currentController.signal });
+        clearTimeout(currentTimeoutId);
+        const end = performance.now();
+        const latency = end - start;
+        if (response.ok) {
+          resultDiv.textContent = `API响应时间: ${latency.toFixed(2)} 毫秒 (${apiUrl})`;
+          resultDiv.className = 'result success';
+          addHistory(apiUrl, latency.toFixed(2), '成功');
+        } else {
+          resultDiv.textContent = `API请求失败: ${response.status} (${apiUrl})`;
+          resultDiv.className = 'result error';
+          addHistory(apiUrl, `失败: ${response.status}`, '失败');
+        }
+      } catch (error) {
+        console.error('API测试错误:', error);
+        resultDiv.textContent = `API请求出错: ${error.message} (${apiUrl})`;
+        resultDiv.className = 'result error';
+        addHistory(apiUrl, `出错: ${error.message}`, '失败');
+      } finally {
+        spinner.style.display = 'none';
+        singleBtn.disabled = false;
+        allBtn.disabled = false;
+        currentController = null;
+        currentTimeoutId = null;
+      }
+    }
+
+    // 防抖包装的testApi
+    const debouncedTestApi = debounce(testApi, 300);
+
+    // 测试所有API
+    async function testAllApis() {
+      const apis = apiList.map(api => api.url);
+      const resultDiv = document.getElementById('apiResult');
+      const spinner = document.getElementById('apiSpinner');
+      const singleBtn = document.getElementById('testSingleBtn');
+      const allBtn = document.getElementById('testAllBtn');
+
+      singleBtn.disabled = true;
+      allBtn.disabled = true;
+      spinner.style.display = 'block';
+
+      for (const apiUrl of apis) {
+        document.getElementById('apiSelect').value = apiUrl;
+        resultDiv.textContent = `正在测试: ${apiUrl}...`;
+        resultDiv.className = 'result loading';
+        await testApi();
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒间隔
+      }
+
+      resultDiv.textContent = '所有API测试完成';
+      resultDiv.className = 'result success';
+      spinner.style.display = 'none';
+      singleBtn.disabled = false;
+      allBtn.disabled = false;
+    }
+
+    // 添加历史记录
+    function addHistory(url, result, status) {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      history.unshift({ time: new Date().toLocaleString(), url, result, status });
+      if (history.length > 50) history.pop();
+      localStorage.setItem('testHistory', JSON.stringify(history));
+      loadHistory();
+      updateSummary();
+    }
+
+    // 加载历史记录
+    function loadHistory() {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      const historyDiv = document.getElementById('history');
+      historyDiv.innerHTML = '';
+      history.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'history-entry';
+        div.textContent = `${entry.time} - ${entry.url}: ${entry.result} (${entry.status})`;
+        historyDiv.appendChild(div);
+      });
+      if (history.length === 0) {
+        const div = document.createElement('div');
+        div.className = 'history-entry';
+        div.textContent = '暂无测试历史';
+        historyDiv.appendChild(div);
+      }
+    }
+
+    // 更新汇总表格
+    function updateSummary() {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      const summary = {};
+      history.forEach(entry => {
+        if (entry.status === '成功') {
+          if (!summary[entry.url]) summary[entry.url] = { total: 0, count: 0 };
+          summary[entry.url].total += parseFloat(entry.result);
+          summary[entry.url].count += 1;
+        }
+      });
+      const tableBody = document.getElementById('summaryTable');
+      tableBody.innerHTML = '';
+      for (const url in summary) {
+        const row = document.createElement('tr');
+        const avg = (summary[url].total / summary[url].count).toFixed(2);
+        row.innerHTML = `<td>${url}</td><td>${avg}</td><td>${summary[url].count}</td>`;
+        tableBody.appendChild(row);
+      }
+    }
 
     // 页面加载完成后计算加载时间并绘制图表
     window.onload = () => {
@@ -224,109 +384,6 @@
         content.classList.toggle('active');
       });
     };
-
-    // 测试单个API
-    async function testApi() {
-      const apiUrl = document.getElementById('apiSelect').value;
-      const resultDiv = document.getElementById('apiResult');
-      const spinner = document.getElementById('apiSpinner');
-      resultDiv.textContent = '正在测试API...';
-      resultDiv.className = 'result loading';
-      spinner.style.display = 'block';
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const start = performance.now();
-        const response = await fetch(apiUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const end = performance.now();
-        const latency = end - start;
-        if (response.ok) {
-          resultDiv.textContent = `API响应时间: ${latency.toFixed(2)} 毫秒 (${apiUrl})`;
-          resultDiv.className = 'result success';
-          addHistory(apiUrl, latency.toFixed(2), '成功');
-        } else {
-          resultDiv.textContent = `API请求失败: ${response.status} (${apiUrl})`;
-          resultDiv.className = 'result error';
-          addHistory(apiUrl, `失败: ${response.status}`, '失败');
-        }
-      } catch (error) {
-        resultDiv.textContent = `API请求出错: ${error.message} (${apiUrl})`;
-        resultDiv.className = 'result error';
-        addHistory(apiUrl, `出错: ${error.message}`, '失败');
-      } finally {
-        spinner.style.display = 'none';
-      }
-    }
-
-    // 测试所有API
-    async function testAllApis() {
-      const apis = Array.from(document.getElementById('apiSelect').options).map(opt => opt.value);
-      const resultDiv = document.getElementById('apiResult');
-      const spinner = document.getElementById('apiSpinner');
-      resultDiv.className = 'result loading';
-      spinner.style.display = 'block';
-
-      for (const apiUrl of apis) {
-        document.getElementById('apiSelect').value = apiUrl;
-        resultDiv.textContent = `正在测试: ${apiUrl}...`;
-        await testApi();
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒间隔
-      }
-      resultDiv.textContent = '所有API测试完成';
-      spinner.style.display = 'none';
-    }
-
-    // 添加历史记录
-    function addHistory(url, result, status) {
-      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
-      history.unshift({ time: new Date().toLocaleString(), url, result, status });
-      if (history.length > 50) history.pop();
-      localStorage.setItem('testHistory', JSON.stringify(history));
-      loadHistory();
-      updateSummary();
-    }
-
-    // 加载历史记录
-    function loadHistory() {
-      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
-      const historyDiv = document.getElementById('history');
-      historyDiv.innerHTML = '';
-      history.forEach(entry => {
-        const div = document.createElement('div');
-        div.className = 'history-entry';
-        div.textContent = `${entry.time} - ${entry.url}: ${entry.result} (${entry.status})`;
-        historyDiv.appendChild(div);
-      });
-      if (history.length === 0) {
-        const div = document.createElement('div');
-        div.className = 'history-entry';
-        div.textContent = '暂无测试历史';
-        historyDiv.appendChild(div);
-      }
-    }
-
-    // 更新汇总表格
-    function updateSummary() {
-      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
-      const summary = {};
-      history.forEach(entry => {
-        if (entry.status === '成功') {
-          if (!summary[entry.url]) summary[entry.url] = { total: 0, count: 0 };
-          summary[entry.url].total += parseFloat(entry.result);
-          summary[entry.url].count += 1;
-        }
-      });
-      const tableBody = document.getElementById('summaryTable');
-      tableBody.innerHTML = '';
-      for (const url in summary) {
-        const row = document.createElement('tr');
-        const avg = (summary[url].total / summary[url].count).toFixed(2);
-        row.innerHTML = `<td>${url}</td><td>${avg}</td><td>${summary[url].count}</td>`;
-        tableBody.appendChild(row);
-      }
-    }
   </script>
 </body>
 </html>
