@@ -133,7 +133,7 @@
       <select id="apiSelect">
         <option value="">请选择API</option>
       </select>
-      <button id="testSingleBtn" onclick="debouncedTestApi()">测试单个API</button>
+      <button id="testSingleBtn" onclick="testApi()">测试单个API</button>
       <button id="testAllBtn" onclick="testAllApis()">测试所有API</button>
     </div>
     <div id="results">
@@ -181,20 +181,15 @@
     // 记录页面加载开始时间
     const startTime = performance.now();
     let chart;
+    let isTesting = false; // 测试锁
     let currentController = null;
     let currentTimeoutId = null;
 
-    // 防抖函数
-    function debounce(fn, delay) {
-      let timeout;
-      return function (...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => fn.apply(this, args), delay);
-      };
-    }
-
     // 测试单个API
     async function testApi() {
+      if (isTesting) return; // 防止并发测试
+      isTesting = true;
+
       const apiUrl = document.getElementById('apiSelect').value;
       const resultDiv = document.getElementById('apiResult');
       const spinner = document.getElementById('apiSpinner');
@@ -204,6 +199,7 @@
       if (!apiUrl) {
         resultDiv.textContent = '请选择一个API';
         resultDiv.className = 'result error';
+        isTesting = false;
         return;
       }
 
@@ -224,7 +220,8 @@
         currentController = new AbortController();
         currentTimeoutId = setTimeout(() => {
           currentController.abort();
-        }, 5000);
+          throw new Error('请求超时');
+        }, 10000); // 10秒超时
         const start = performance.now();
         const response = await fetch(apiUrl, { signal: currentController.signal });
         clearTimeout(currentTimeoutId);
@@ -240,7 +237,7 @@
           addHistory(apiUrl, `失败: ${response.status}`, '失败');
         }
       } catch (error) {
-        console.error('API测试错误:', error);
+        console.error('API测试错误:', error.message, apiUrl);
         resultDiv.textContent = `API请求出错: ${error.message} (${apiUrl})`;
         resultDiv.className = 'result error';
         addHistory(apiUrl, `出错: ${error.message}`, '失败');
@@ -248,16 +245,17 @@
         spinner.style.display = 'none';
         singleBtn.disabled = false;
         allBtn.disabled = false;
+        isTesting = false;
         currentController = null;
         currentTimeoutId = null;
       }
     }
 
-    // 防抖包装的testApi
-    const debouncedTestApi = debounce(testApi, 300);
-
     // 测试所有API
     async function testAllApis() {
+      if (isTesting) return; // 防止并发测试
+      isTesting = true;
+
       const apis = apiList.map(api => api.url);
       const resultDiv = document.getElementById('apiResult');
       const spinner = document.getElementById('apiSpinner');
@@ -281,6 +279,7 @@
       spinner.style.display = 'none';
       singleBtn.disabled = false;
       allBtn.disabled = false;
+      isTesting = false;
     }
 
     // 添加历史记录
