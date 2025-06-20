@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>网站访问速度测试</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -15,16 +16,22 @@
       color: #333;
     }
     .container {
-      max-width: 600px;
+      max-width: 900px;
       margin: 0 auto;
       padding: 20px;
       background: white;
       border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    .input-group {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      margin: 20px 0;
     }
     select, button {
-      padding: 10px;
-      margin: 10px;
+      padding: 12px;
       font-size: 16px;
       border-radius: 5px;
       border: 1px solid #ccc;
@@ -38,11 +45,11 @@
     button:hover {
       background-color: #218838;
     }
-    #results {
+    #results, #history, #summary {
       margin-top: 20px;
-      font-size: 18px;
+      font-size: 16px;
     }
-    .result {
+    .result, .history-entry, .summary-table {
       margin: 10px 0;
       padding: 10px;
       border: 1px solid #ccc;
@@ -57,64 +64,267 @@
     .error {
       color: #dc3545;
     }
+    #chartContainer {
+      margin-top: 20px;
+      max-width: 700px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    #history {
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      padding: 10px;
+      border-radius: 5px;
+    }
+    .accordion {
+      cursor: pointer;
+      padding: 10px;
+      background-color: #f1f1f1;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+    .accordion:hover {
+      background-color: #e0e0e0;
+    }
+    .accordion-content {
+      display: none;
+    }
+    .accordion-content.active {
+      display: block;
+    }
+    .spinner {
+      display: none;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #28a745;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .summary-table table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .summary-table th, .summary-table td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    .summary-table th {
+      background-color: #f1f1f1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>网站访问速度测试</h1>
-    <div>
+    <div class="input-group">
       <label for="apiSelect">选择要测试的API：</label>
-      <select id="apiSelect">
-        <option value="https://jsonplaceholder.typicode.com/posts/1">JSONPlaceholder - Posts</option>
-        <option value="https://pokeapi.co/api/v2/pokemon/1">PokeAPI - Pokemon</option>
-        <option value="https://api.vvhan.com/api/visitor.info">VVHan - IP Info (国内)</option>
-        <option value="https://reqres.in/api/users/1">Reqres - Users</option>
-      </select>
-      <button onclick="testApi()">测试速度</button>
+      <select id="apiSelect"></select>
+      <button onclick="testApi()">测试单个API</button>
+      <button onclick="testAllApis()">测试所有API</button>
     </div>
     <div id="results">
       <div id="pageLoad" class="result loading">正在测量页面加载时间...</div>
-      <div id="apiResult" class="result loading">请选择API并点击测试</div>
+      <div id="apiResult" class="result loading">请选择API并点击测试 <div class="spinner" id="apiSpinner"></div></div>
+    </div>
+    <div id="chartContainer">
+      <canvas id="speedChart"></canvas>
+    </div>
+    <div class="accordion">点击查看测试历史</div>
+    <div id="history" class="accordion-content"></div>
+    <div id="summary" class="summary-table">
+      <h3>API响应时间汇总</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>API</th>
+            <th>平均响应时间 (毫秒)</th>
+            <th>测试次数</th>
+          </tr>
+        </thead>
+        <tbody id="summaryTable"></tbody>
+      </table>
     </div>
   </div>
 
   <script>
+    // 加载API列表
+    fetch('./apis.json')
+      .then(response => response.json())
+      .then(data => {
+        const select = document.getElementById('apiSelect');
+        data.forEach(api => {
+          const option = document.createElement('option');
+          option.value = api.url;
+          option.textContent = api.name;
+          select.appendChild(option);
+        });
+      })
+      .catch(error => console.error('加载API列表失败:', error));
+
     // 记录页面加载开始时间
     const startTime = performance.now();
+    let chart;
 
-    // 页面加载完成后计算加载时间
+    // 页面加载完成后计算加载时间并绘制图表
     window.onload = () => {
-      const loadTime = performance.now() - startTime;
+      const timing = performance.timing;
+      const dnsTime = timing.domainLookupEnd - timing.domainLookupStart;
+      const connectTime = timing.connectEnd - timing.connectStart;
+      const responseTime = timing.responseStart - timing.requestStart;
+      const totalTime = performance.now() - startTime;
       const pageLoadDiv = document.getElementById('pageLoad');
-      pageLoadDiv.textContent = `页面加载时间: ${loadTime.toFixed(2)} 毫秒`;
+      pageLoadDiv.innerHTML = `
+        页面加载时间: ${totalTime.toFixed(2)} 毫秒<br>
+        DNS解析时间: ${dnsTime} 毫秒<br>
+        TCP连接时间: ${connectTime} 毫秒<br>
+        服务器响应时间: ${responseTime} 毫秒
+      `;
       pageLoadDiv.className = 'result success';
+
+      // 初始图表
+      const ctx = document.getElementById('speedChart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: ['页面加载', 'DNS解析', 'TCP连接', '服务器响应'],
+          datasets: [{
+            label: '时间 (毫秒)',
+            data: [totalTime, dnsTime, connectTime, responseTime],
+            backgroundColor: ['#28a745', '#007bff', '#ffc107', '#dc3545'],
+            borderColor: ['#1e7e34', '#0056b3', '#e0a800', '#c82333'],
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: { beginAtZero: true, title: { display: true, text: '时间 (毫秒)' } }
+          },
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: '加载速度对比' }
+          }
+        }
+      });
+
+      // 加载历史记录
+      loadHistory();
+      updateSummary();
+
+      // 折叠面板
+      document.querySelector('.accordion').addEventListener('click', () => {
+        const content = document.getElementById('history');
+        content.classList.toggle('active');
+      });
     };
 
-    // 测试API响应时间
+    // 测试单个API
     async function testApi() {
       const apiUrl = document.getElementById('apiSelect').value;
       const resultDiv = document.getElementById('apiResult');
+      const spinner = document.getElementById('apiSpinner');
       resultDiv.textContent = '正在测试API...';
       resultDiv.className = 'result loading';
+      spinner.style.display = 'block';
 
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
         const start = performance.now();
         const response = await fetch(apiUrl, { signal: controller.signal });
         clearTimeout(timeoutId);
         const end = performance.now();
+        const latency = end - start;
         if (response.ok) {
-          const latency = end - start;
           resultDiv.textContent = `API响应时间: ${latency.toFixed(2)} 毫秒 (${apiUrl})`;
           resultDiv.className = 'result success';
+          addHistory(apiUrl, latency.toFixed(2), '成功');
         } else {
           resultDiv.textContent = `API请求失败: ${response.status} (${apiUrl})`;
           resultDiv.className = 'result error';
+          addHistory(apiUrl, `失败: ${response.status}`, '失败');
         }
       } catch (error) {
         resultDiv.textContent = `API请求出错: ${error.message} (${apiUrl})`;
         resultDiv.className = 'result error';
+        addHistory(apiUrl, `出错: ${error.message}`, '失败');
+      } finally {
+        spinner.style.display = 'none';
+      }
+    }
+
+    // 测试所有API
+    async function testAllApis() {
+      const apis = Array.from(document.getElementById('apiSelect').options).map(opt => opt.value);
+      const resultDiv = document.getElementById('apiResult');
+      const spinner = document.getElementById('apiSpinner');
+      resultDiv.className = 'result loading';
+      spinner.style.display = 'block';
+
+      for (const apiUrl of apis) {
+        document.getElementById('apiSelect').value = apiUrl;
+        resultDiv.textContent = `正在测试: ${apiUrl}...`;
+        await testApi();
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒间隔
+      }
+      resultDiv.textContent = '所有API测试完成';
+      spinner.style.display = 'none';
+    }
+
+    // 添加历史记录
+    function addHistory(url, result, status) {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      history.unshift({ time: new Date().toLocaleString(), url, result, status });
+      if (history.length > 50) history.pop();
+      localStorage.setItem('testHistory', JSON.stringify(history));
+      loadHistory();
+      updateSummary();
+    }
+
+    // 加载历史记录
+    function loadHistory() {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      const historyDiv = document.getElementById('history');
+      historyDiv.innerHTML = '';
+      history.forEach(entry => {
+        const div = document.createElement('div');
+        div.className = 'history-entry';
+        div.textContent = `${entry.time} - ${entry.url}: ${entry.result} (${entry.status})`;
+        historyDiv.appendChild(div);
+      });
+      if (history.length === 0) {
+        const div = document.createElement('div');
+        div.className = 'history-entry';
+        div.textContent = '暂无测试历史';
+        historyDiv.appendChild(div);
+      }
+    }
+
+    // 更新汇总表格
+    function updateSummary() {
+      const history = JSON.parse(localStorage.getItem('testHistory') || '[]');
+      const summary = {};
+      history.forEach(entry => {
+        if (entry.status === '成功') {
+          if (!summary[entry.url]) summary[entry.url] = { total: 0, count: 0 };
+          summary[entry.url].total += parseFloat(entry.result);
+          summary[entry.url].count += 1;
+        }
+      });
+      const tableBody = document.getElementById('summaryTable');
+      tableBody.innerHTML = '';
+      for (const url in summary) {
+        const row = document.createElement('tr');
+        const avg = (summary[url].total / summary[url].count).toFixed(2);
+        row.innerHTML = `<td>${url}</td><td>${avg}</td><td>${summary[url].count}</td>`;
+        tableBody.appendChild(row);
       }
     }
   </script>
