@@ -66,9 +66,9 @@
       <label for="apiSelect">选择要测试的API：</label>
       <select id="apiSelect">
         <option value="https://jsonplaceholder.typicode.com/posts/1">JSONPlaceholder - Posts</option>
-        <option value="https://api.publicapis.org/entries">Public APIs - Entries</option>
         <option value="https://pokeapi.co/api/v2/pokemon/1">PokeAPI - Pokemon</option>
         <option value="https://api.vvhan.com/api/visitor.info">VVHan - IP Info (国内)</option>
+        <option value="https://reqres.in/api/users/1">Reqres - Users</option>
       </select>
       <button onclick="testApi()">测试速度</button>
     </div>
@@ -98,8 +98,11 @@
       resultDiv.className = 'result loading';
 
       try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒超时
         const start = performance.now();
-        const response = await fetch(apiUrl);
+        const response = await fetch(apiUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const end = performance.now();
         if (response.ok) {
           const latency = end - start;
