@@ -5,21 +5,77 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>网站访问速度测试</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; text-align: center; }
-    h1 { color: #333; }
-    #results { margin-top: 20px; font-size: 18px; }
-    .result { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-    .loading { color: #888; }
-    .success { color: #28a745; }
-    .error { color: #dc3545; }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      text-align: center;
+      background-color: #f4f4f9;
+    }
+    h1 {
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    select, button {
+      padding: 10px;
+      margin: 10px;
+      font-size: 16px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+    button {
+      background-color: #28a745;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    #results {
+      margin-top: 20px;
+      font-size: 18px;
+    }
+    .result {
+      margin: 10px 0;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    .loading {
+      color: #888;
+    }
+    .success {
+      color: #28a745;
+    }
+    .error {
+      color: #dc3545;
+    }
   </style>
 </head>
 <body>
-  <h1>网站访问速度测试</h1>
-  <div id="results">
-    <div id="pageLoad" class="result loading">正在测量页面加载时间...</div>
-    <div id="api1" class="result loading">正在测试 API 1...</div>
-    <div id="api2" class="result loading">正在测试 API 2...</div>
+  <div class="container">
+    <h1>网站访问速度测试</h1>
+    <div>
+      <label for="apiSelect">选择要测试的API：</label>
+      <select id="apiSelect">
+        <option value="https://jsonplaceholder.typicode.com/posts/1">JSONPlaceholder - Posts</option>
+        <option value="https://api.publicapis.org/entries">Public APIs - Entries</option>
+        <option value="https://pokeapi.co/api/v2/pokemon/1">PokeAPI - Pokemon</option>
+        <option value="https://api.vvhan.com/api/visitor.info">VVHan - IP Info (国内)</option>
+      </select>
+      <button onclick="testApi()">测试速度</button>
+    </div>
+    <div id="results">
+      <div id="pageLoad" class="result loading">正在测量页面加载时间...</div>
+      <div id="apiResult" class="result loading">请选择API并点击测试</div>
+    </div>
   </div>
 
   <script>
@@ -34,30 +90,30 @@
       pageLoadDiv.className = 'result success';
     };
 
-    // 测试 API 响应时间
-    async function testApi(url, elementId) {
-      const resultDiv = document.getElementById(elementId);
+    // 测试API响应时间
+    async function testApi() {
+      const apiUrl = document.getElementById('apiSelect').value;
+      const resultDiv = document.getElementById('apiResult');
+      resultDiv.textContent = '正在测试API...';
+      resultDiv.className = 'result loading';
+
       try {
         const start = performance.now();
-        const response = await fetch(url);
+        const response = await fetch(apiUrl);
         const end = performance.now();
         if (response.ok) {
           const latency = end - start;
-          resultDiv.textContent = `API ${elementId} 响应时间: ${latency.toFixed(2)} 毫秒`;
+          resultDiv.textContent = `API响应时间: ${latency.toFixed(2)} 毫秒 (${apiUrl})`;
           resultDiv.className = 'result success';
         } else {
-          resultDiv.textContent = `API ${elementId} 请求失败: ${response.status}`;
+          resultDiv.textContent = `API请求失败: ${response.status} (${apiUrl})`;
           resultDiv.className = 'result error';
         }
       } catch (error) {
-        resultDiv.textContent = `API ${elementId} 请求出错: ${error.message}`;
+        resultDiv.textContent = `API请求出错: ${error.message} (${apiUrl})`;
         resultDiv.className = 'result error';
       }
     }
-
-    // 测试两个公开 API 端点  
-    testApi('https://api.vvhan.com/api/visitor.info', 'api1');
-    testApi('https://pokeapi.co/api/v2/pokemon/1', 'api2');
   </script>
 </body>
 </html>
